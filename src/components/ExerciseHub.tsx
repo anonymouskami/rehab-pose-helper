@@ -340,6 +340,14 @@ const ExerciseHub = () => {
             <span className="font-medium">Current Exercise:</span>
             <span>{currentExercise.name}</span>
           </div>
+          
+          <div className="text-sm text-gray-700">
+  <div>Instruction</div>
+  {currentExercise.instructions.map((instruction, index) => (
+    <div key={index}>{instruction}</div>
+  ))}
+</div>
+
           <div className="flex items-center gap-2">
             <span className="font-medium">Reps Completed:</span>
             <span>{reps}</span>
