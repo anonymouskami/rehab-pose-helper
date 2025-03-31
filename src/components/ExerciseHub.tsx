@@ -1,6 +1,8 @@
+
 import React, { useRef, useEffect, useState } from "react";
 import * as poseDetection from "@tensorflow-models/pose-detection";
 import "@tensorflow/tfjs-backend-webgl";
+import "@tensorflow/tfjs-backend-cpu"; // Add CPU backend as fallback
 import * as tf from "@tensorflow/tfjs-core";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +10,8 @@ import { useToast } from "@/hooks/use-toast";
 import { exerciseData } from "@/data/exercises";
 import FeedbackDisplay from "./FeedbackDisplay";
 import { calculateExerciseAccuracy } from "@/utils/poseUtils";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertTriangle } from "lucide-react";
 
 const ExerciseHub = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -21,18 +25,29 @@ const ExerciseHub = () => {
   const [reps, setReps] = useState(0);
   const [repState, setRepState] = useState<"up" | "down">("up");
   const [modelLoaded, setModelLoaded] = useState(false);
+  const [modelError, setModelError] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Load the pose detection model
   useEffect(() => {
     const loadModel = async () => {
       try {
-        await tf.setBackend('webgl');
+        // Try WebGL first, fallback to CPU if not available
+        try {
+          await tf.setBackend('webgl');
+          console.log("Using WebGL backend");
+        } catch (webglError) {
+          console.log("WebGL backend failed, falling back to CPU", webglError);
+          await tf.setBackend('cpu');
+          console.log("Using CPU backend");
+        }
+        
         await tf.ready();
         console.log("TensorFlow backend initialized:", tf.getBackend());
         
         const detectorConfig = {
           modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+          enableSmoothing: true,
         };
         
         const detector = await poseDetection.createDetector(
@@ -42,12 +57,20 @@ const ExerciseHub = () => {
         
         setDetector(detector);
         setModelLoaded(true);
+        setModelError(null);
         console.log("Pose detection model loaded successfully");
+        
+        toast({
+          title: "Model Loaded",
+          description: "Pose detection model is ready to use",
+        });
       } catch (error) {
         console.error("Error loading pose detection model:", error);
+        setModelError("Failed to load pose detection model. Your device may not support the required features.");
+        setModelLoaded(false);
         toast({
           title: "Model Loading Error",
-          description: "Failed to load pose detection model. Please refresh the page.",
+          description: "Failed to load pose detection model. Please try a different device or browser.",
           variant: "destructive"
         });
       }
@@ -279,6 +302,15 @@ const ExerciseHub = () => {
           <CardDescription>Follow the exercise and receive real-time feedback</CardDescription>
         </CardHeader>
         <CardContent className="relative">
+          {modelError && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Device Compatibility Issue</AlertTitle>
+              <AlertDescription>
+                {modelError} Try using a device with better WebGL support or a different browser.
+              </AlertDescription>
+            </Alert>
+          )}
           <div className="relative aspect-video rounded-md overflow-hidden bg-black">
             <video
               ref={videoRef}
@@ -292,6 +324,14 @@ const ExerciseHub = () => {
               ref={canvasRef}
               className="absolute inset-0 w-full h-full object-cover"
             />
+            {!modelLoaded && !modelError && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p>Loading pose detection model...</p>
+                </div>
+              </div>
+            )}
           </div>
           <FeedbackDisplay feedback={feedback} accuracy={accuracy} />
         </CardContent>
@@ -316,7 +356,7 @@ const ExerciseHub = () => {
               <Button variant="outline" onClick={stopExercise}>End Exercise</Button>
             ) : null}
           </div>
-          {!modelLoaded && <p className="text-sm text-amber-600">Loading pose detection model...</p>}
+          {!modelLoaded && !modelError && <p className="text-sm text-amber-600">Loading pose detection model...</p>}
         </CardFooter>
       </Card>
 
