@@ -1,5 +1,5 @@
 
-import React, { useRef, useEffect, useState, useCallback } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import * as poseDetection from "@tensorflow-models/pose-detection";
 import "@tensorflow/tfjs-backend-webgl";
 import "@tensorflow/tfjs-backend-cpu"; // Add CPU backend as fallback
@@ -16,9 +16,7 @@ import { AlertTriangle } from "lucide-react";
 const ExerciseHub = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const detectorRef = useRef<poseDetection.PoseDetector | null>(null);
-  const animationFrameRef = useRef<number>(0);
-  const lastFrameTimeRef = useRef<number>(0);
+  const [detector, setDetector] = useState<poseDetection.PoseDetector | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
   const [currentExercise, setCurrentExercise] = useState(exerciseData[0]);
   const [exerciseActive, setExerciseActive] = useState(false);
@@ -28,11 +26,7 @@ const ExerciseHub = () => {
   const [repState, setRepState] = useState<"up" | "down">("up");
   const [modelLoaded, setModelLoaded] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
-  const [fps, setFps] = useState(0);
   const { toast } = useToast();
-  const lastRepTimeRef = useRef(Date.now());
-  const frameCountRef = useRef(0);
-  const lastFpsUpdateRef = useRef(0);
 
   // Load the pose detection model
   useEffect(() => {
@@ -41,20 +35,14 @@ const ExerciseHub = () => {
         // Try WebGL first, fallback to CPU if not available
         try {
           await tf.setBackend('webgl');
-          await tf.ready();
           console.log("Using WebGL backend");
-          
-          // Set WebGL parameters for better performance
-          const gl = await tf.backend().getGPGPUContext().gl;
-          gl.getExtension('OES_texture_float');
-          gl.getExtension('WEBGL_lose_context');
         } catch (webglError) {
           console.log("WebGL backend failed, falling back to CPU", webglError);
           await tf.setBackend('cpu');
-          await tf.ready();
           console.log("Using CPU backend");
         }
         
+        await tf.ready();
         console.log("TensorFlow backend initialized:", tf.getBackend());
         
         const detectorConfig = {
@@ -67,7 +55,7 @@ const ExerciseHub = () => {
           detectorConfig
         );
         
-        detectorRef.current = detector;
+        setDetector(detector);
         setModelLoaded(true);
         setModelError(null);
         console.log("Pose detection model loaded successfully");
@@ -97,23 +85,14 @@ const ExerciseHub = () => {
       if (!videoRef.current) return;
       
       try {
-        // Request camera with higher frame rate constraints
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 640 },
-            height: { ideal: 480 },
-            frameRate: { ideal: 60, min: 30 } // Request higher frame rate
-          },
+          video: { width: 640, height: 480 },
           audio: false
         });
         
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.style.opacity = "1";
-          
-          // Set video properties for better performance
-          videoRef.current.playsInline = true;
-          videoRef.current.muted = true;
           
           videoRef.current.onloadedmetadata = () => {
             if (videoRef.current) {
@@ -142,112 +121,93 @@ const ExerciseHub = () => {
     };
   }, [toast]);
 
-  // Optimized detection function with frame throttling
-  const detectPose = useCallback(async (timestamp: number) => {
-    if (!detectorRef.current || !videoRef.current || !canvasRef.current || videoRef.current.readyState !== 4) {
-      animationFrameRef.current = requestAnimationFrame(detectPose);
-      return;
-    }
+  // Main detection loop
+  useEffect(() => {
+    let animationFrame: number;
+    let lastRepTime = Date.now();
+    
+    const detectPose = async () => {
+      if (!detector || !videoRef.current || !canvasRef.current || videoRef.current.readyState !== 4) {
+        animationFrame = requestAnimationFrame(detectPose);
+        return;
+      }
 
-    // Calculate actual FPS
-    frameCountRef.current++;
-    if (timestamp - lastFpsUpdateRef.current >= 1000) {
-      setFps(Math.round((frameCountRef.current * 1000) / (timestamp - lastFpsUpdateRef.current)));
-      frameCountRef.current = 0;
-      lastFpsUpdateRef.current = timestamp;
-    }
-
-    // Control frame rate for stable performance
-    // Target ~40 FPS by ensuring at least 25ms between frames
-    const elapsed = timestamp - lastFrameTimeRef.current;
-    if (elapsed < 25) {
-      animationFrameRef.current = requestAnimationFrame(detectPose);
-      return;
-    }
-    
-    lastFrameTimeRef.current = timestamp;
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    
-    if (!ctx) return;
-    
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    try {
-      const poses = await detectorRef.current.estimatePoses(video);
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d");
       
-      if (poses.length > 0 && exerciseActive) {
-        const pose = poses[0];
+      if (!ctx) return;
+      
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      try {
+        const poses = await detector.estimatePoses(video);
         
-        if (pose.keypoints) {
-          drawKeypoints(pose.keypoints, ctx);
-          drawSkeleton(pose.keypoints, ctx);
+        if (poses.length > 0 && exerciseActive) {
+          const pose = poses[0];
           
-          const { accuracy: poseAccuracy, feedback: poseFeedback, isCorrectPosition } = 
-            calculateExerciseAccuracy(pose.keypoints, currentExercise);
-          
-          setAccuracy(poseAccuracy);
-          setFeedback(poseFeedback);
-          
-          const currentTime = Date.now();
-          
-          if (currentTime - lastRepTimeRef.current > 1000) {
-            if (isCorrectPosition && repState === "up") {
-              setRepState("down");
-            } else if (!isCorrectPosition && repState === "down") {
-              setRepState("up");
-              setReps(prev => prev + 1);
-              lastRepTimeRef.current = currentTime;
-              
-              toast({
-                title: "Rep completed!",
-                description: `You've completed ${reps + 1} reps`,
-                duration: 1000
-              });
-              
-              const savedProgress = JSON.parse(localStorage.getItem('exerciseProgress') || '{}');
-              const exerciseProgress = savedProgress[currentExercise.id] || { totalReps: 0, sessions: [] };
-              
-              exerciseProgress.totalReps += 1;
-              exerciseProgress.sessions.push({
-                date: new Date().toISOString(),
-                reps: 1,
-                accuracy: poseAccuracy
-              });
-              
-              savedProgress[currentExercise.id] = exerciseProgress;
-              localStorage.setItem('exerciseProgress', JSON.stringify(savedProgress));
+          if (pose.keypoints) {
+            drawKeypoints(pose.keypoints, ctx);
+            drawSkeleton(pose.keypoints, ctx);
+            
+            const { accuracy: poseAccuracy, feedback: poseFeedback, isCorrectPosition } = 
+              calculateExerciseAccuracy(pose.keypoints, currentExercise);
+            
+            setAccuracy(poseAccuracy);
+            setFeedback(poseFeedback);
+            
+            const currentTime = Date.now();
+            
+            if (currentTime - lastRepTime > 1000) {
+              if (isCorrectPosition && repState === "up") {
+                setRepState("down");
+              } else if (!isCorrectPosition && repState === "down") {
+                setRepState("up");
+                setReps(prev => prev + 1);
+                lastRepTime = currentTime;
+                
+                toast({
+                  title: "Rep completed!",
+                  description: `You've completed ${reps + 1} reps`,
+                  duration: 1000
+                });
+                
+                const savedProgress = JSON.parse(localStorage.getItem('exerciseProgress') || '{}');
+                const exerciseProgress = savedProgress[currentExercise.id] || { totalReps: 0, sessions: [] };
+                
+                exerciseProgress.totalReps += 1;
+                exerciseProgress.sessions.push({
+                  date: new Date().toISOString(),
+                  reps: 1,
+                  accuracy: poseAccuracy
+                });
+                
+                savedProgress[currentExercise.id] = exerciseProgress;
+                localStorage.setItem('exerciseProgress', JSON.stringify(savedProgress));
+              }
             }
           }
         }
+      } catch (error) {
+        console.error("Error detecting pose:", error);
       }
-    } catch (error) {
-      console.error("Error detecting pose:", error);
-    }
+      
+      animationFrame = requestAnimationFrame(detectPose);
+    };
     
-    animationFrameRef.current = requestAnimationFrame(detectPose);
-  }, [exerciseActive, currentExercise, reps, repState, toast]);
-
-  // Main detection loop
-  useEffect(() => {
     if (isDetecting) {
-      lastFrameTimeRef.current = performance.now();
-      lastFpsUpdateRef.current = performance.now();
-      frameCountRef.current = 0;
-      animationFrameRef.current = requestAnimationFrame(detectPose);
+      detectPose();
     }
     
     return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
       }
     };
-  }, [isDetecting, detectPose]);
+  }, [detector, isDetecting, currentExercise, exerciseActive, repState, reps, toast]);
 
   const startDetection = () => {
     setIsDetecting(true);
@@ -372,9 +332,6 @@ const ExerciseHub = () => {
                 </div>
               </div>
             )}
-            <div className="absolute top-2 right-2 bg-black/60 text-white px-2 py-1 rounded-md text-xs">
-              {fps} FPS
-            </div>
           </div>
           <FeedbackDisplay feedback={feedback} accuracy={accuracy} />
         </CardContent>
