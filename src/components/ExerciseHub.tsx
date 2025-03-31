@@ -1,7 +1,7 @@
-
 import React, { useRef, useEffect, useState } from "react";
 import * as poseDetection from "@tensorflow-models/pose-detection";
 import "@tensorflow/tfjs-backend-webgl";
+import * as tf from "@tensorflow/tfjs-core";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -20,29 +20,41 @@ const ExerciseHub = () => {
   const [accuracy, setAccuracy] = useState(0);
   const [reps, setReps] = useState(0);
   const [repState, setRepState] = useState<"up" | "down">("up");
+  const [modelLoaded, setModelLoaded] = useState(false);
   const { toast } = useToast();
 
   // Load the pose detection model
   useEffect(() => {
     const loadModel = async () => {
-      const detectorConfig = {
-        modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
-      };
-      
       try {
+        await tf.setBackend('webgl');
+        await tf.ready();
+        console.log("TensorFlow backend initialized:", tf.getBackend());
+        
+        const detectorConfig = {
+          modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+        };
+        
         const detector = await poseDetection.createDetector(
           poseDetection.SupportedModels.MoveNet, 
           detectorConfig
         );
+        
         setDetector(detector);
-        console.log("Pose detection model loaded");
+        setModelLoaded(true);
+        console.log("Pose detection model loaded successfully");
       } catch (error) {
         console.error("Error loading pose detection model:", error);
+        toast({
+          title: "Model Loading Error",
+          description: "Failed to load pose detection model. Please refresh the page.",
+          variant: "destructive"
+        });
       }
     };
 
     loadModel();
-  }, []);
+  }, [toast]);
 
   // Set up webcam when component mounts
   useEffect(() => {
@@ -57,6 +69,14 @@ const ExerciseHub = () => {
         
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          videoRef.current.style.opacity = "1";
+          
+          videoRef.current.onloadedmetadata = () => {
+            if (videoRef.current) {
+              videoRef.current.play();
+              console.log("Webcam stream started successfully");
+            }
+          };
         }
       } catch (error) {
         console.error("Error accessing webcam:", error);
@@ -98,64 +118,58 @@ const ExerciseHub = () => {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       
-      // Detect poses
-      const poses = await detector.estimatePoses(video);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       
-      if (poses.length > 0 && exerciseActive) {
-        const pose = poses[0];
+      try {
+        const poses = await detector.estimatePoses(video);
         
-        // Draw skeleton
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
-        // Draw keypoints
-        if (pose.keypoints) {
-          drawKeypoints(pose.keypoints, ctx);
-          drawSkeleton(pose.keypoints, ctx);
+        if (poses.length > 0 && exerciseActive) {
+          const pose = poses[0];
           
-          // Calculate accuracy and provide feedback
-          const { accuracy: poseAccuracy, feedback: poseFeedback, isCorrectPosition } = 
-            calculateExerciseAccuracy(pose.keypoints, currentExercise);
-          
-          setAccuracy(poseAccuracy);
-          setFeedback(poseFeedback);
-          
-          // Rep counting logic
-          const currentTime = Date.now();
-          
-          // Check if enough time has passed between reps
-          if (currentTime - lastRepTime > 1000) {
-            if (isCorrectPosition && repState === "up") {
-              setRepState("down");
-            } else if (!isCorrectPosition && repState === "down") {
-              setRepState("up");
-              setReps(prev => prev + 1);
-              lastRepTime = currentTime;
-              
-              toast({
-                title: "Rep completed!",
-                description: `You've completed ${reps + 1} reps`,
-                duration: 1000
-              });
-              
-              // Save progress
-              const savedProgress = JSON.parse(localStorage.getItem('exerciseProgress') || '{}');
-              const exerciseProgress = savedProgress[currentExercise.id] || { totalReps: 0, sessions: [] };
-              
-              exerciseProgress.totalReps += 1;
-              exerciseProgress.sessions.push({
-                date: new Date().toISOString(),
-                reps: 1,
-                accuracy: poseAccuracy
-              });
-              
-              savedProgress[currentExercise.id] = exerciseProgress;
-              localStorage.setItem('exerciseProgress', JSON.stringify(savedProgress));
+          if (pose.keypoints) {
+            drawKeypoints(pose.keypoints, ctx);
+            drawSkeleton(pose.keypoints, ctx);
+            
+            const { accuracy: poseAccuracy, feedback: poseFeedback, isCorrectPosition } = 
+              calculateExerciseAccuracy(pose.keypoints, currentExercise);
+            
+            setAccuracy(poseAccuracy);
+            setFeedback(poseFeedback);
+            
+            const currentTime = Date.now();
+            
+            if (currentTime - lastRepTime > 1000) {
+              if (isCorrectPosition && repState === "up") {
+                setRepState("down");
+              } else if (!isCorrectPosition && repState === "down") {
+                setRepState("up");
+                setReps(prev => prev + 1);
+                lastRepTime = currentTime;
+                
+                toast({
+                  title: "Rep completed!",
+                  description: `You've completed ${reps + 1} reps`,
+                  duration: 1000
+                });
+                
+                const savedProgress = JSON.parse(localStorage.getItem('exerciseProgress') || '{}');
+                const exerciseProgress = savedProgress[currentExercise.id] || { totalReps: 0, sessions: [] };
+                
+                exerciseProgress.totalReps += 1;
+                exerciseProgress.sessions.push({
+                  date: new Date().toISOString(),
+                  reps: 1,
+                  accuracy: poseAccuracy
+                });
+                
+                savedProgress[currentExercise.id] = exerciseProgress;
+                localStorage.setItem('exerciseProgress', JSON.stringify(savedProgress));
+              }
             }
           }
         }
-      } else {
-        // Just display the video stream when not actively exercising
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      } catch (error) {
+        console.error("Error detecting pose:", error);
       }
       
       animationFrame = requestAnimationFrame(detectPose);
@@ -209,7 +223,6 @@ const ExerciseHub = () => {
     setFeedback("");
   };
   
-  // Draw keypoints on canvas
   const drawKeypoints = (keypoints: poseDetection.Keypoint[], ctx: CanvasRenderingContext2D) => {
     keypoints.forEach((keypoint) => {
       if (keypoint.score && keypoint.score > 0.3) {
@@ -223,7 +236,6 @@ const ExerciseHub = () => {
     });
   };
   
-  // Draw skeleton on canvas
   const drawSkeleton = (keypoints: poseDetection.Keypoint[], ctx: CanvasRenderingContext2D) => {
     const connections = [
       ["nose", "left_eye"], ["nose", "right_eye"],
@@ -274,7 +286,7 @@ const ExerciseHub = () => {
               playsInline
               muted
               className="absolute inset-0 w-full h-full object-cover"
-              style={{ opacity: 0 }}
+              style={{ opacity: 1 }}
             />
             <canvas
               ref={canvasRef}
@@ -299,11 +311,12 @@ const ExerciseHub = () => {
               <Button variant="outline" onClick={stopDetection}>Stop Camera</Button>
             )}
             {isDetecting && !exerciseActive ? (
-              <Button onClick={startExercise}>Start Exercise</Button>
+              <Button onClick={startExercise} disabled={!modelLoaded}>Start Exercise</Button>
             ) : isDetecting && exerciseActive ? (
               <Button variant="outline" onClick={stopExercise}>End Exercise</Button>
             ) : null}
           </div>
+          {!modelLoaded && <p className="text-sm text-amber-600">Loading pose detection model...</p>}
         </CardFooter>
       </Card>
 
