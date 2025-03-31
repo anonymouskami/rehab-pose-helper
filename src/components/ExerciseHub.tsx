@@ -84,7 +84,7 @@ const ExerciseHub = () => {
     let lastRepTime = Date.now();
     
     const detectPose = async () => {
-      if (!detector || !videoRef.current || !canvasRef.current || !videoRef.current.readyState === 4) {
+      if (!detector || !videoRef.current || !canvasRef.current || videoRef.current.readyState !== 4) {
         animationFrame = requestAnimationFrame(detectPose);
         return;
       }
