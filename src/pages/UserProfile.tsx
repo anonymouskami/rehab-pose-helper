@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +30,7 @@ import { getAiRecommendation, AiRequestData } from "@/services/aiService";
 
 const formSchema = z.object({
   age: z.string().min(1, "Age is required").refine((val) => !isNaN(Number(val)), "Age must be a number"),
-  bmi: z.string().min(1, "BMI is required").refine((val) => !isNaN(Number(val)), "BMI must be a number"),
+  height: z.string().min(1, "Height is required").refine((val) => !isNaN(Number(val)), "Height must be a number"),
   weight: z.string().min(1, "Weight is required").refine((val) => !isNaN(Number(val)), "Weight must be a number"),
   injuryType: z.string().min(1, "Injury type is required"),
   painLevel: z.string().min(1, "Pain level is required")
@@ -110,25 +111,42 @@ const UserProfile = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [recommendedExercises, setRecommendedExercises] = useState<typeof exerciseData>([]);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
+  const [calculatedBmi, setCalculatedBmi] = useState<string>("0");
   const navigate = useNavigate();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       age: "",
-      bmi: "",
+      height: "",
       weight: "",
       injuryType: "",
       painLevel: ""
     }
   });
+  
+  // Calculate BMI whenever weight or height changes
+  useEffect(() => {
+    const weight = parseFloat(form.watch("weight"));
+    const height = parseFloat(form.watch("height"));
+    
+    if (weight && height && height > 0) {
+      // BMI = weight(kg) / height(m)^2
+      // Convert height from cm to m if needed
+      const heightInMeters = height > 3 ? height / 100 : height;
+      const bmi = weight / (heightInMeters * heightInMeters);
+      setCalculatedBmi(bmi.toFixed(1));
+    } else {
+      setCalculatedBmi("0");
+    }
+  }, [form.watch("weight"), form.watch("height")]);
 
   const onSubmit = async (data: FormValues) => {
     setIsLoading(true);
     try {
       const aiRequestData: AiRequestData = {
         age: data.age,
-        bmi: data.bmi,
+        bmi: calculatedBmi,
         weight: data.weight,
         injuryType: data.injuryType,
         painLevel: data.painLevel
@@ -233,20 +251,29 @@ const UserProfile = () => {
                 
                 <FormField
                   control={form.control}
-                  name="bmi"
+                  name="height"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>BMI</FormLabel>
+                      <FormLabel>Height (cm)</FormLabel>
                       <FormControl>
-                        <Input placeholder="Enter your BMI" {...field} />
+                        <Input placeholder="Enter your height in cm" {...field} />
                       </FormControl>
-                      <FormDescription>
-                        You can calculate your BMI by dividing your weight (kg) by your height squared (m²)
-                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+
+                <div className="bg-blue-50 p-4 rounded-md border border-blue-100 mb-2">
+                  <div className="flex items-center">
+                    <Info className="text-blue-500 mr-2" size={18} />
+                    <div>
+                      <p className="font-medium">Your BMI: {calculatedBmi}</p>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Body Mass Index (BMI) is automatically calculated based on your weight and height
+                      </p>
+                    </div>
+                  </div>
+                </div>
                 
                 <FormField
                   control={form.control}
