@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState } from "react";
 import * as poseDetection from "@tensorflow-models/pose-detection";
 import "@tensorflow/tfjs-backend-webgl";
@@ -12,13 +11,14 @@ import FeedbackDisplay from "./FeedbackDisplay";
 import { calculateExerciseAccuracy } from "@/utils/poseUtils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertTriangle } from "lucide-react";
+import { useLocation } from "react-router-dom";
 
 const ExerciseHub = () => {
+  const location = useLocation();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [detector, setDetector] = useState<poseDetection.PoseDetector | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
-  const [currentExercise, setCurrentExercise] = useState(exerciseData[0]);
   const [exerciseActive, setExerciseActive] = useState(false);
   const [feedback, setFeedback] = useState<string>("");
   const [accuracy, setAccuracy] = useState(0);
@@ -26,13 +26,21 @@ const ExerciseHub = () => {
   const [repState, setRepState] = useState<"up" | "down">("up");
   const [modelLoaded, setModelLoaded] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
+  const [fps, setFps] = useState(0);
+  const [frameCount, setFrameCount] = useState(0);
+  const lastCalcTime = useRef(performance.now());
   const { toast } = useToast();
+  
+  const initialExerciseId = location.state?.selectedExerciseId;
+  const initialExercise = initialExerciseId 
+    ? exerciseData.find(ex => ex.id === initialExerciseId) || exerciseData[0]
+    : exerciseData[0];
+  
+  const [currentExercise, setCurrentExercise] = useState(initialExercise);
 
-  // Load the pose detection model
   useEffect(() => {
     const loadModel = async () => {
       try {
-        // Try WebGL first, fallback to CPU if not available
         try {
           await tf.setBackend('webgl');
           console.log("Using WebGL backend");
@@ -79,7 +87,6 @@ const ExerciseHub = () => {
     loadModel();
   }, [toast]);
 
-  // Set up webcam when component mounts
   useEffect(() => {
     const setupCamera = async () => {
       if (!videoRef.current) return;
@@ -121,7 +128,6 @@ const ExerciseHub = () => {
     };
   }, [toast]);
 
-  // Main detection loop
   useEffect(() => {
     let animationFrame: number;
     let lastRepTime = Date.now();
@@ -293,6 +299,12 @@ const ExerciseHub = () => {
       }
     });
   };
+
+  useEffect(() => {
+    if (initialExerciseId && modelLoaded) {
+      startDetection();
+    }
+  }, [initialExerciseId, modelLoaded]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

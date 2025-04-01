@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -27,9 +26,8 @@ import { exerciseData } from "@/data/exercises";
 import { toast } from "sonner";
 import { ArrowRight, Info, AlertCircle } from "lucide-react";
 import ApiKeyInput from "@/components/ApiKeyInput";
-import { getAiRecommendation } from "@/services/aiService";
+import { getAiRecommendation, AiRequestData } from "@/services/aiService";
 
-// Define the form schema with Zod
 const formSchema = z.object({
   age: z.string().min(1, "Age is required").refine((val) => !isNaN(Number(val)), "Age must be a number"),
   bmi: z.string().min(1, "BMI is required").refine((val) => !isNaN(Number(val)), "BMI must be a number"),
@@ -40,7 +38,6 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-// Injury solutions data
 const injurySolutions: {[key: string]: string[]} = {
   "ACL Tear": [
     "Rest and avoid putting weight on the knee.",
@@ -114,6 +111,7 @@ const UserProfile = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [recommendedExercises, setRecommendedExercises] = useState<typeof exerciseData>([]);
   const [apiKey, setApiKey] = useState<string>("");
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const form = useForm<FormValues>({
@@ -134,18 +132,27 @@ const UserProfile = () => {
   const onSubmit = async (data: FormValues) => {
     setIsLoading(true);
     try {
-      // Get AI recommendation using our service
-      const aiResponse = await getAiRecommendation(data, apiKey);
+      const aiRequestData: AiRequestData = {
+        age: data.age,
+        bmi: data.bmi,
+        weight: data.weight,
+        injuryType: data.injuryType,
+        painLevel: data.painLevel
+      };
+      
+      const aiResponse = await getAiRecommendation(aiRequestData, apiKey);
       setAiRecommendation(aiResponse.recommendation);
       
-      // Find recommended exercises based on the AI response
       if (aiResponse.exerciseIds && aiResponse.exerciseIds.length > 0) {
         const exercises = exerciseData.filter(ex => 
           aiResponse.exerciseIds?.includes(ex.id)
         );
         setRecommendedExercises(exercises.length > 0 ? exercises : exerciseData.slice(0, 2));
+        
+        if (exercises.length > 0) {
+          setSelectedExerciseId(exercises[0].id);
+        }
       } else {
-        // Fallback to basic recommendation by injury type
         const lowerInjuryType = data.injuryType.toLowerCase();
         
         if (lowerInjuryType.includes("knee") || lowerInjuryType.includes("acl")) {
@@ -171,7 +178,7 @@ const UserProfile = () => {
   };
 
   const handleStartExercise = () => {
-    navigate("/exercises");
+    navigate("/exercises", { state: { selectedExerciseId } });
   };
   
   const injuryTypes = [
@@ -348,7 +355,12 @@ const UserProfile = () => {
               {recommendedExercises.length > 0 ? (
                 <div className="grid gap-4">
                   {recommendedExercises.map(exercise => (
-                    <div key={exercise.id} className="border rounded-md p-4 hover:bg-gray-50">
+                    <div 
+                      key={exercise.id} 
+                      className={`border rounded-md p-4 hover:bg-gray-50 ${exercise.id === selectedExerciseId ? 'border-primary bg-primary/5' : ''}`}
+                      onClick={() => setSelectedExerciseId(exercise.id)}
+                      role="button"
+                    >
                       <h4 className="font-medium">{exercise.name}</h4>
                       <p className="text-sm text-gray-600 mt-1">{exercise.shortDescription}</p>
                     </div>

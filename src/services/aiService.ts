@@ -1,8 +1,6 @@
-
 // This service will handle AI recommendation API calls
-// You'll need to add your API key later
 
-interface AiRequestData {
+export interface AiRequestData {
   age: string;
   bmi: string;
   weight: string;
@@ -10,7 +8,7 @@ interface AiRequestData {
   painLevel: string;
 }
 
-interface AiResponse {
+export interface AiResponse {
   recommendation: string;
   exerciseIds?: string[];
 }
