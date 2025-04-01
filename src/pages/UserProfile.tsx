@@ -25,7 +25,6 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { exerciseData } from "@/data/exercises";
 import { toast } from "sonner";
 import { ArrowRight, Info, AlertCircle } from "lucide-react";
-import ApiKeyInput from "@/components/ApiKeyInput";
 import { getAiRecommendation, AiRequestData } from "@/services/aiService";
 
 const formSchema = z.object({
@@ -110,7 +109,6 @@ const UserProfile = () => {
   const [aiRecommendation, setAiRecommendation] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [recommendedExercises, setRecommendedExercises] = useState<typeof exerciseData>([]);
-  const [apiKey, setApiKey] = useState<string>("");
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
   const navigate = useNavigate();
 
@@ -125,10 +123,6 @@ const UserProfile = () => {
     }
   });
 
-  const handleApiKeySave = (key: string) => {
-    setApiKey(key);
-  };
-
   const onSubmit = async (data: FormValues) => {
     setIsLoading(true);
     try {
@@ -140,7 +134,7 @@ const UserProfile = () => {
         painLevel: data.painLevel
       };
       
-      const aiResponse = await getAiRecommendation(aiRequestData, apiKey);
+      const aiResponse = await getAiRecommendation(aiRequestData);
       setAiRecommendation(aiResponse.recommendation);
       
       if (aiResponse.exerciseIds && aiResponse.exerciseIds.length > 0) {
@@ -299,8 +293,6 @@ const UserProfile = () => {
                     </FormItem>
                   )}
                 />
-                
-                <ApiKeyInput onApiKeySaved={handleApiKeySave} />
                 
                 <Button type="submit" className="w-full" disabled={isLoading}>
                   {isLoading ? "Generating Recommendations..." : "Get Personalized Recommendations"}

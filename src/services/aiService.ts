@@ -1,3 +1,4 @@
+
 // This service will handle AI recommendation API calls
 
 export interface AiRequestData {
@@ -13,23 +14,24 @@ export interface AiResponse {
   exerciseIds?: string[];
 }
 
-export const getAiRecommendation = async (data: AiRequestData, apiKey?: string): Promise<AiResponse> => {
-  // Mock implementation - replace with actual API call when you have your API key
-  if (!apiKey) {
-    // If no API key is provided, return mock data
-    console.log("No API key provided, using mock recommendation");
-    return mockAiResponse(data);
-  }
-  
+// Hard-coded API key for demonstration (in a real application, this would be in a secure backend environment)
+const BACKEND_API_KEY = "default-mock-key"; 
+
+export const getAiRecommendation = async (data: AiRequestData): Promise<AiResponse> => {
   try {
-    // This is where you would make your API call when you have your API key
-    // For example:
+    // In a real application, this would be a backend API call
+    // The backend would securely store and use the API key
+    
+    // For demo purposes we're using the mock response
+    console.log("Using backend API key for AI recommendation");
+    return mockAiResponse(data);
+    
+    // In a real implementation with a backend:
     /*
-    const response = await fetch('https://your-ai-service-url/recommendations', {
+    const response = await fetch('/api/ai-recommendations', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify(data)
     });
@@ -40,9 +42,6 @@ export const getAiRecommendation = async (data: AiRequestData, apiKey?: string):
     
     return await response.json();
     */
-    
-    // For now, just return mock data
-    return mockAiResponse(data);
   } catch (error) {
     console.error("Error getting AI recommendation:", error);
     throw error;
